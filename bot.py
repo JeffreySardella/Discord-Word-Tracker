@@ -1,6 +1,8 @@
 import discord
 import io
 import os
+import re
+from collections import Counter
 from dotenv import load_dotenv
 from faster_whisper import WhisperModel
 
@@ -14,14 +16,27 @@ GUILD_ID = 446051370802479115
 model = WhisperModel(MODEL_SIZE, device="cpu", compute_type="int8")
 
 intents = discord.Intents.default()
-intents.members = True  # Required to resolve User IDs to display names
+intents.members = True
 bot = discord.Bot(intents=intents)
+
+holiday_mode = False
 
 
 async def finished_callback(sink, channel: discord.TextChannel, *args):
-    await channel.send("Recording finished. Processing audio...")
+    if holiday_mode:
+        await channel.send("🎄 *Ho ho ho! Let's see what everyone said...* 🎅")
+        header = "### 🎁 Holiday Word Report 🎁\n"
+        no_audio_msg = "🦌 *The reindeer heard nothing!*"
+        no_speech_fmt = "🎅 *Silent Night...*"
+        top_label = "🎄 Top words"
+    else:
+        await channel.send("Recording finished. Processing audio...")
+        header = "### Voice Chat Summary\n"
+        no_audio_msg = "No audio detected."
+        no_speech_fmt = "(No speech detected)"
+        top_label = "Top words"
 
-    report = "### Voice Chat Summary\n"
+    report = header
     any_audio = False
 
     for user_id, audio in sink.audio_data.items():
@@ -29,7 +44,7 @@ async def finished_callback(sink, channel: discord.TextChannel, *args):
         username = user.display_name
 
         audio_bytes = audio.file.read()
-        if len(audio_bytes) < 1000:  # Skip silent/empty streams
+        if len(audio_bytes) < 1000:
             continue
 
         any_audio = True
@@ -37,13 +52,17 @@ async def finished_callback(sink, channel: discord.TextChannel, *args):
         text = " ".join([segment.text for segment in segments]).strip()
 
         if text:
-            word_count = len(text.split())
-            report += f"**{username}**: {text} *({word_count} words)*\n"
+            words = re.findall(r"\b[a-z']+\b", text.lower())
+            word_count = len(words)
+            top_words = Counter(words).most_common(10)
+            top_str = ", ".join(f"{w} ({c})" for w, c in top_words)
+            report += f"**{username}** *({word_count} words)*\n"
+            report += f"┗ {top_label}: {top_str}\n\n"
         else:
-            report += f"**{username}**: (No speech detected)\n"
+            report += f"**{username}**: {no_speech_fmt}\n\n"
 
     if not any_audio:
-        await channel.send("No audio detected.")
+        await channel.send(no_audio_msg)
     else:
         await channel.send(report)
 
@@ -56,7 +75,6 @@ async def start(ctx: discord.ApplicationContext):
     if ctx.voice_client:
         if ctx.voice_client.recording:
             return await ctx.respond("Already recording.")
-        # Already in VC, just start recording
         ctx.voice_client.start_recording(
             discord.sinks.WaveSink(), finished_callback, ctx.channel
         )
@@ -64,15 +82,16 @@ async def start(ctx: discord.ApplicationContext):
         vc = await ctx.author.voice.channel.connect()
         vc.start_recording(discord.sinks.WaveSink(), finished_callback, ctx.channel)
 
-    await ctx.respond("Now listening to all users in VC...")
+    msg = "🎄 Ho ho ho! Now tracking who says what..." if holiday_mode else "Now listening to all users in VC..."
+    await ctx.respond(msg)
 
 
 @bot.slash_command(guild_ids=[GUILD_ID], description="Stop tracking and show results")
 async def stop(ctx: discord.ApplicationContext):
     if ctx.voice_client and ctx.voice_client.recording:
-        await ctx.respond("Stopping recording and analyzing...")
+        msg = "🎅 Wrapping up your gifts..." if holiday_mode else "Stopping recording and analyzing..."
+        await ctx.respond(msg)
         ctx.voice_client.stop_recording()
-        # Bot stays in VC — use /leave to disconnect
     else:
         await ctx.respond("I am not currently recording.")
 
@@ -86,6 +105,16 @@ async def leave(ctx: discord.ApplicationContext):
         await ctx.respond("Disconnected.")
     else:
         await ctx.respond("I am not in a voice channel.")
+
+
+@bot.slash_command(guild_ids=[GUILD_ID], description="Toggle holiday (Christmas) mode")
+async def holiday(ctx: discord.ApplicationContext):
+    global holiday_mode
+    holiday_mode = not holiday_mode
+    if holiday_mode:
+        await ctx.respond("🎄 Holiday mode ON! Ho ho ho!")
+    else:
+        await ctx.respond("Holiday mode off.")
 
 
 bot.run(BOT_TOKEN)
