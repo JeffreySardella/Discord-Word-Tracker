@@ -82,7 +82,7 @@ async def start(ctx: discord.ApplicationContext):
         vc = await ctx.author.voice.channel.connect()
         vc.start_recording(discord.sinks.WaveSink(), finished_callback, ctx.channel)
 
-    msg = "🎄 Ho ho ho! Now tracking who says what..." if holiday_mode else "Now listening to all users in VC..."
+    msg = "🎄 Ho ho ho! ..." if holiday_mode else "Now listening to all users in VC..."
     await ctx.respond(msg)
 
 
