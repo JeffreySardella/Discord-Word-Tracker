@@ -1,10 +1,14 @@
 import discord
 import io
+import os
+from dotenv import load_dotenv
 from faster_whisper import WhisperModel
+
+load_dotenv()
 
 # --- CONFIGURATION ---
 MODEL_SIZE = "base.en"  # or "small.en" for higher accuracy (~500MB RAM)
-BOT_TOKEN = "YOUR_BOT_TOKEN"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 model = WhisperModel(MODEL_SIZE, device="cpu", compute_type="int8")
 
