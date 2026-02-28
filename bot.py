@@ -9,6 +9,7 @@ load_dotenv()
 # --- CONFIGURATION ---
 MODEL_SIZE = "base.en"  # or "small.en" for higher accuracy (~500MB RAM)
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+GUILD_ID = 446051370802479115
 
 model = WhisperModel(MODEL_SIZE, device="cpu", compute_type="int8")
 
@@ -47,7 +48,7 @@ async def finished_callback(sink, channel: discord.TextChannel, *args):
         await channel.send(report)
 
 
-@bot.slash_command(description="Start tracking voice chat")
+@bot.slash_command(guild_ids=[GUILD_ID], description="Start tracking voice chat")
 async def start(ctx: discord.ApplicationContext):
     if not ctx.author.voice:
         return await ctx.respond("You must be in a voice channel!")
@@ -66,7 +67,7 @@ async def start(ctx: discord.ApplicationContext):
     await ctx.respond("Now listening to all users in VC...")
 
 
-@bot.slash_command(description="Stop tracking and show results")
+@bot.slash_command(guild_ids=[GUILD_ID], description="Stop tracking and show results")
 async def stop(ctx: discord.ApplicationContext):
     if ctx.voice_client and ctx.voice_client.recording:
         await ctx.respond("Stopping recording and analyzing...")
@@ -76,7 +77,7 @@ async def stop(ctx: discord.ApplicationContext):
         await ctx.respond("I am not currently recording.")
 
 
-@bot.slash_command(description="Disconnect the bot from voice")
+@bot.slash_command(guild_ids=[GUILD_ID], description="Disconnect the bot from voice")
 async def leave(ctx: discord.ApplicationContext):
     if ctx.voice_client:
         if ctx.voice_client.recording:
