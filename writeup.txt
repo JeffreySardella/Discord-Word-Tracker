@@ -1,0 +1,165 @@
+# Discord Voice Chat Word Tracker Bot
+
+## Overview
+
+This bot joins a Discord voice channel, records each user's audio stream separately, transcribes it locally using Faster-Whisper, and posts a per-user word count and transcript summary to a text channel when recording stops.
+
+No audio is sent to any external API — all transcription runs locally on your CPU.
+
+---
+
+## Project Architecture
+
+- **Language:** Python 3.10+
+- **Discord Library:** Pycord — chosen for its built-in voice recording sink support (`discord.sinks.WaveSink`), which automatically separates audio per user.
+- **Transcription Engine:** Faster-Whisper (`base.en` or `small.en` model) — a CTranslate2-optimized version of OpenAI Whisper that runs efficiently on CPU with int8 quantization.
+- **ID Resolution:** Discord's internal cache (`bot.get_user`) maps user IDs to display names automatically, with a fallback to `fetch_user` for uncached members.
+
+---
+
+## Prerequisites
+
+Python 3.10+ and the following packages:
+
+```bash
+pip install "py-cord[voice]" faster-whisper
+```
+
+You also need:
+- A Discord bot token (from the [Discord Developer Portal](https://discord.com/developers/applications))
+- Bot permissions: `Connect`, `Speak`, `Use Voice Activity`, and `Send Messages`
+- The `Server Members Intent` enabled in the Developer Portal (required for username resolution)
+
+---
+
+## Configuration
+
+At the top of the script, two values can be tuned:
+
+| Variable | Default | Notes |
+|---|---|---|
+| `MODEL_SIZE` | `"base.en"` | Fast, ~150MB RAM. Use `"small.en"` for higher accuracy (~500MB RAM). |
+| `BOT_TOKEN` | `"YOUR_BOT_TOKEN"` | Replace with your actual token. Use an environment variable in production. |
+
+The `device="cpu"` and `compute_type="int8"` settings are optimized for a CPU-only machine (e.g., i7-4790K). No GPU required.
+
+---
+
+## Slash Commands
+
+| Command | Description |
+|---|---|
+| `/start` | Joins your current voice channel and begins a recording session. |
+| `/stop` | Stops the current session and posts the transcript summary. Bot stays in VC. |
+| `/leave` | Disconnects the bot from the voice channel. |
+
+`/start` and `/stop` must be used by someone currently in a voice channel.
+
+---
+
+## How It Works
+
+1. `/start` is called → bot connects to the voice channel and starts a `WaveSink` recording session.
+2. Pycord's `WaveSink` captures each speaker's audio into a separate in-memory buffer, keyed by user ID.
+3. `/stop` is called → `stop_recording()` triggers the `finished_callback`.
+4. For each user, the callback:
+   - Resolves the user ID to a display name.
+   - Skips audio buffers under 1000 bytes (silence / no mic).
+   - Passes the audio bytes to Faster-Whisper for transcription.
+   - Counts words in the resulting transcript.
+5. A formatted Markdown summary is posted to the text channel where the command was invoked.
+
+---
+
+## Implementation
+
+```python
+import discord
+import os
+import io
+from faster_whisper import WhisperModel
+
+# --- CONFIGURATION ---
+MODEL_SIZE = "base.en"  # or "small.en" for higher accuracy
+model = WhisperModel(MODEL_SIZE, device="cpu", compute_type="int8")
+
+intents = discord.Intents.default()
+intents.members = True  # Required to resolve User IDs to display names
+bot = discord.Bot(intents=intents)
+
+
+async def finished_callback(sink, channel: discord.TextChannel, *args):
+    await channel.send("Recording finished. Processing audio...")
+
+    report = "### Voice Chat Summary\n"
+
+    for user_id, audio in sink.audio_data.items():
+        user = bot.get_user(user_id) or await bot.fetch_user(user_id)
+        username = user.display_name
+
+        audio_bytes = audio.file.read()
+        if len(audio_bytes) < 1000:  # Skip silent/empty streams
+            continue
+
+        segments, _ = model.transcribe(io.BytesIO(audio_bytes), beam_size=5)
+        text = " ".join([segment.text for segment in segments]).strip()
+
+        if text:
+            word_count = len(text.split())
+            report += f"**{username}**: {text} *({word_count} words)*\n"
+        else:
+            report += f"**{username}**: (No speech detected)\n"
+
+    await channel.send(report)
+
+
+@bot.slash_command(description="Start tracking voice chat")
+async def start(ctx: discord.ApplicationContext):
+    if not ctx.author.voice:
+        return await ctx.respond("You must be in a voice channel!")
+
+    vc = await ctx.author.voice.channel.connect()
+    vc.start_recording(discord.sinks.WaveSink(), finished_callback, ctx.channel)
+    await ctx.respond("Now listening to all users in VC...")
+
+
+@bot.slash_command(description="Stop tracking and show results")
+async def stop(ctx: discord.ApplicationContext):
+    if ctx.voice_client and ctx.voice_client.recording:
+        await ctx.respond("Stopping recording and analyzing...")
+        ctx.voice_client.stop_recording()
+        # Bot intentionally stays in VC — use /leave to disconnect
+    else:
+        await ctx.respond("I am not currently recording.")
+
+
+@bot.slash_command(description="Disconnect the bot from voice")
+async def leave(ctx: discord.ApplicationContext):
+    if ctx.voice_client:
+        await ctx.voice_client.disconnect()
+        await ctx.respond("Disconnected.")
+    else:
+        await ctx.respond("I am not in a voice channel.")
+
+
+bot.run("YOUR_BOT_TOKEN")
+```
+
+---
+
+## Output Example
+
+```
+### Voice Chat Summary
+**Alice**: Hey everyone, just wanted to check in on the project status. (13 words)
+**Bob**: Yeah I finished the backend yesterday, still need to write tests. (12 words)
+**Charlie**: (No speech detected)
+```
+
+---
+
+## Notes
+
+- The bot only processes audio for the duration between `/start` and `/stop`. It does not record continuously between sessions.
+- All audio data is held in memory and discarded after the callback completes — nothing is written to disk.
+- For longer sessions or larger voice channels, `small.en` is recommended for better transcription accuracy at the cost of slightly more RAM and processing time.
