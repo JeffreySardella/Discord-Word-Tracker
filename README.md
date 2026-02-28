@@ -1,6 +1,6 @@
 # Discord Voice Chat Word Tracker
 
-A Discord bot that records voice chat, transcribes each user's speech locally, and posts a per-user word count and transcript summary to a text channel.
+A Discord bot that records voice chat, transcribes each user's speech locally, and posts a per-user word count and top 10 most-used words to a text channel.
 
 No audio is sent to any external API — all transcription runs locally on your CPU.
 
@@ -20,8 +20,9 @@ No audio is sent to any external API — all transcription runs locally on your 
 | Command | Description |
 |---|---|
 | `/start` | Join your voice channel and begin a recording session. |
-| `/stop` | End the session and post the transcript summary. Bot stays in VC. |
+| `/stop` | End the session and post the word summary. Bot stays in VC. |
 | `/leave` | Disconnect the bot from the voice channel. |
+| `/holiday` | Toggle Christmas-themed messages on/off. |
 
 ---
 
@@ -30,15 +31,19 @@ No audio is sent to any external API — all transcription runs locally on your 
 **Requirements:** Python 3.10+
 
 ```bash
-pip install "py-cord[voice]" faster-whisper
+pip install -r requirements.txt
 ```
 
 **Discord Developer Portal:**
 - Create a bot and copy its token
-- Enable the `Server Members Intent`
+- Enable the `Server Members Intent` under Privileged Gateway Intents
 - Grant permissions: `Connect`, `Speak`, `Use Voice Activity`, `Send Messages`
 
-**In the script**, replace `"YOUR_BOT_TOKEN"` with your actual token.
+**Token:** Create a `.env` file in the project root:
+
+```
+BOT_TOKEN=your_token_here
+```
 
 ---
 
@@ -47,6 +52,7 @@ pip install "py-cord[voice]" faster-whisper
 | Variable | Default | Notes |
 |---|---|---|
 | `MODEL_SIZE` | `"base.en"` | Fast, ~150MB RAM. Use `"small.en"` for higher accuracy (~500MB RAM). |
+| `GUILD_ID` | your server ID | Ensures slash commands register instantly to your server. |
 
 Runs on CPU with int8 quantization — no GPU required.
 
@@ -56,9 +62,23 @@ Runs on CPU with int8 quantization — no GPU required.
 
 ```
 ### Voice Chat Summary
-**Alice**: Hey everyone, just wanted to check in on the project status. (13 words)
-**Bob**: Yeah I finished the backend yesterday, still need to write tests. (12 words)
+**Alice** (13 words)
+┗ Top words: the (3), just (2), hey (1), everyone (1), wanted (1), check (1), project (1), status (1)
+
+**Bob** (12 words)
+┗ Top words: the (2), yeah (1), finished (1), backend (1), yesterday (1), need (1), write (1), tests (1)
+
 **Charlie**: (No speech detected)
+```
+
+### Holiday Mode
+
+```
+🎁 Holiday Word Report 🎁
+**Alice** (13 words)
+┗ 🎄 Top words: the (3), just (2), hey (1), everyone (1) ...
+
+**Charlie**: 🎅 Silent Night...
 ```
 
 ---
